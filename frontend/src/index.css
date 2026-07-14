@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-navy-dark: #0a192f;
+  --color-navy-panel: #0b1426;
+  --color-navy-card: #172a45;
+  --color-navy-border: #1d2d44;
+  --color-ocean-cyan: #00f0ff;
+  --color-ocean-blue: #0284c7;
+  --color-ocean-light: #38bdf8;
+  
+  --font-sans: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-navy-dark);
+  color: #f8fafc;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar matching Ocean Theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-navy-panel);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-navy-card);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ocean-blue);
+}
