@@ -35,13 +35,15 @@ Thumbs.db
 *.sln
 *.sw?
 
-# Storage/Data artifacts (large files, video frames, etc.)
-storage/vid_*/
-storage/models/
-storage/detections/
-runs/
+# Storage/Data artifacts (large files, video frames, generated models, datasets, etc.)
+storage/*
+!storage/classes.json
 datasets/
+runs/
 *.pt
 *.onnx
 *.engine
+*.mp4
+*.avi
+*.mov
 
