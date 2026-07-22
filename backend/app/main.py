@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import videos
+from app.routers import videos, detection, training
 
 # Configure logging
 logging.basicConfig(
@@ -30,6 +30,17 @@ app.add_middleware(
 
 # Register routers
 app.include_router(videos.router)
+app.include_router(detection.router)
+app.include_router(training.router)
+
+# Mount static files directory for video and frame serving
+from fastapi.staticfiles import StaticFiles
+from app.config import STORAGE_DIR
+import os
+os.makedirs(STORAGE_DIR, exist_ok=True)
+
+app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
+app.mount("/api/storage", StaticFiles(directory=str(STORAGE_DIR)), name="api_storage")
 
 @app.get("/")
 async def root():

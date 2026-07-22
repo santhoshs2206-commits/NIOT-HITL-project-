@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import Upload from './pages/Upload';
 import Workspace from './pages/Workspace';
 import DatasetStatus from './pages/DatasetStatus';
+import YoloTraining from './pages/YoloTraining';
+import DetectionPage from './pages/DetectionPage';
 import NotFound from './pages/NotFound';
 
 // Initialize React Query client
@@ -28,6 +30,8 @@ const App: React.FC = () => {
             <Route path="upload" element={<Upload />} />
             <Route path="workspace" element={<Workspace />} />
             <Route path="status" element={<DatasetStatus />} />
+            <Route path="training" element={<YoloTraining />} />
+            <Route path="detection" element={<DetectionPage />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

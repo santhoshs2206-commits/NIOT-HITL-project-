@@ -36,5 +36,12 @@ Thumbs.db
 *.sw?
 
 # Storage/Data artifacts (large files, video frames, etc.)
-storage/vid_*/images/
-storage/vid_*/video.mp4
+storage/vid_*/
+storage/models/
+storage/detections/
+runs/
+datasets/
+*.pt
+*.onnx
+*.engine
+

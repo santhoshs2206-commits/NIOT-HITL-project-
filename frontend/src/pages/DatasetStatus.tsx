@@ -1,5 +1,5 @@
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   BarChart3,
@@ -11,16 +11,36 @@ import {
   TrendingUp,
   Tag,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  MoreVertical,
+  Trash2,
+  FileVideo,
+  Check,
+  HardDrive
 } from 'lucide-react';
-import { getDatasetStatus, getClasses } from '../services/videoService';
+import {
+  getDatasetStatus,
+  getClasses,
+  deleteUploadedVideoOnly,
+  deleteCompleteDataset
+} from '../services/videoService';
+import type { VideoStatusItem } from '../types/api';
 
 const DatasetStatus: React.FC = () => {
+  const queryClient = useQueryClient();
+
+  // Menu and modal states
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [videoToDeleteOnly, setVideoToDeleteOnly] = useState<VideoStatusItem | null>(null);
+  const [videoToDeleteAll, setVideoToDeleteAll] = useState<VideoStatusItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
   // Fetch dataset global status metrics from FastAPI
   const { data: statusData, isLoading, isError, error } = useQuery({
     queryKey: ['dataset-status'],
     queryFn: getDatasetStatus,
-    refetchInterval: 10000, // Poll every 10 seconds to keep analytics fresh
+    refetchInterval: 10000, // Poll every 10 seconds
   });
 
   // Fetch unique classes vocabulary list
@@ -28,6 +48,41 @@ const DatasetStatus: React.FC = () => {
     queryKey: ['classes'],
     queryFn: getClasses,
   });
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToastMessage({ type, message });
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handleConfirmDeleteVideoOnly = async () => {
+    if (!videoToDeleteOnly) return;
+    setIsDeleting(true);
+    try {
+      const res = await deleteUploadedVideoOnly(videoToDeleteOnly.video_id);
+      showToast('success', res.message || 'Uploaded video removed successfully.');
+      queryClient.invalidateQueries({ queryKey: ['dataset-status'] });
+      setVideoToDeleteOnly(null);
+    } catch (err: any) {
+      showToast('error', err.response?.data?.detail || 'Failed to delete video file.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleConfirmDeleteCompleteDataset = async () => {
+    if (!videoToDeleteAll) return;
+    setIsDeleting(true);
+    try {
+      const res = await deleteCompleteDataset(videoToDeleteAll.video_id);
+      showToast('success', res.message || 'Complete dataset deleted successfully.');
+      queryClient.invalidateQueries({ queryKey: ['dataset-status'] });
+      setVideoToDeleteAll(null);
+    } catch (err: any) {
+      showToast('error', err.response?.data?.detail || 'Failed to delete complete dataset.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -53,6 +108,8 @@ const DatasetStatus: React.FC = () => {
   const stats = statusData || {
     total_videos: 0,
     total_frames: 0,
+    skipped_frames: 0,
+    effective_total_frames: 0,
     annotated_frames: 0,
     remaining_frames: 0,
     overall_completion_rate: 0,
@@ -62,7 +119,25 @@ const DatasetStatus: React.FC = () => {
   const classesList = classesData || [];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-fadeIn">
+    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-fadeIn relative">
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div
+          className={`fixed top-6 right-6 z-50 px-4 py-3 rounded-xl border shadow-2xl flex items-center space-x-3 text-sm animate-fadeIn ${
+            toastMessage.type === 'success'
+              ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-300'
+              : 'bg-rose-950/90 border-rose-500/40 text-rose-300'
+          }`}
+        >
+          {toastMessage.type === 'success' ? (
+            <Check className="w-5 h-5 text-emerald-400" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-rose-400" />
+          )}
+          <span>{toastMessage.message}</span>
+        </div>
+      )}
+
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-navy-border pb-6">
         <div>
@@ -82,14 +157,14 @@ const DatasetStatus: React.FC = () => {
         <div className="bg-navy-panel border border-navy-border p-6 rounded-xl shadow-lg relative overflow-hidden group hover:border-sky-500/35 transition-all">
           <div className="flex justify-between items-start">
             <div>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Total Videos</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Total Datasets</span>
               <span className="text-3xl font-bold text-slate-100 mt-2 block">{stats.total_videos}</span>
             </div>
             <div className="p-3 bg-sky-500/10 rounded-lg text-sky-400 group-hover:scale-110 transition-transform">
               <Video className="w-6 h-6" />
             </div>
           </div>
-          <div className="mt-4 text-[10px] text-slate-500">Unique subsea video sources uploaded</div>
+          <div className="mt-4 text-[10px] text-slate-500">Unique subsea dataset runs</div>
         </div>
 
         {/* Total Frames */}
@@ -152,13 +227,15 @@ const DatasetStatus: React.FC = () => {
       {/* Main Grid: Videos details & classes vocabulary */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Videos Status Table */}
-        <div className="lg:col-span-2 bg-navy-panel border border-navy-border rounded-xl shadow-xl overflow-hidden flex flex-col">
-          <div className="p-5 border-b border-navy-border bg-[#0b1426]">
-            <h3 className="text-base font-bold text-slate-100 tracking-wide">Footage Annotation Status</h3>
-            <p className="text-slate-400 text-xs mt-1">Detailed status breakdown for individual uploaded video runs.</p>
+        <div className="lg:col-span-2 bg-navy-panel border border-navy-border rounded-xl shadow-xl flex flex-col">
+          <div className="p-5 border-b border-navy-border bg-[#0b1426] flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-slate-100 tracking-wide">Footage Annotation Status</h3>
+              <p className="text-slate-400 text-xs mt-1">Detailed status breakdown for individual uploaded video runs.</p>
+            </div>
           </div>
 
-          <div className="overflow-x-auto flex-1">
+          <div className="overflow-x-auto min-h-[300px] flex-1 pb-20">
             {stats.videos.length === 0 ? (
               <div className="p-8 text-center text-slate-500 text-sm">
                 No videos uploaded yet. Go to <Link to="/upload" className="text-sky-400 hover:underline">Upload</Link> to start.
@@ -176,16 +253,37 @@ const DatasetStatus: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-navy-border/50 text-sm">
                   {stats.videos.map((vid) => {
-                    const isCompleted = vid.status === 'completed';
-                    const isAnnotating = vid.status === 'annotating';
+                    const isCompleted = vid.status === 'completed' || vid.completion_rate >= 100;
+                    const isAnnotating = vid.status === 'annotating' && vid.completion_rate < 100;
+                    const isMenuOpen = openMenuId === vid.video_id;
                     return (
-                      <tr key={vid.video_id} className="hover:bg-[#0c162b]/20 transition-colors">
+                      <tr key={vid.video_id} className={`transition-colors ${isMenuOpen ? 'relative z-30 bg-[#0c162b]/40' : 'hover:bg-[#0c162b]/20'}`}>
                         <td className="p-4 pl-6">
                           <div className="flex flex-col min-w-0">
                             <span className="font-semibold text-slate-200 truncate max-w-[200px]" title={vid.filename}>
                               {vid.filename}
                             </span>
-                            <span className="text-[10px] font-mono text-slate-500 mt-0.5">{vid.video_id}</span>
+                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                              <code className="text-[10px] font-mono text-slate-500">{vid.video_id}</code>
+                              {vid.video_deleted && (
+                                <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                  <HardDrive className="w-3 h-3" />
+                                  Video Removed (Storage Saved)
+                                </span>
+                              )}
+                              {vid.status !== 'uploaded' && (
+                                <>
+                                  <span className="text-[9px] font-bold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 rounded">
+                                    {vid.motion_profile || 'Moderate'}
+                                  </span>
+                                  {vid.original_total_frames > 0 && (
+                                    <span className="text-[9px] font-medium text-slate-400 bg-[#0c162b] border border-navy-border/55 px-1.5 py-0.5 rounded">
+                                      {vid.reduction_ratio}x Reduction ({vid.original_total_frames} → {vid.total_frames} frames)
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="p-4">
@@ -201,7 +299,7 @@ const DatasetStatus: React.FC = () => {
                         </td>
                         <td className="p-4 text-center">
                           <span className="text-xs font-semibold text-slate-300">
-                            {vid.annotated_frames} <span className="text-slate-500">/ {vid.total_frames}</span>
+                            {vid.annotated_frames} <span className="text-slate-500">/ {vid.effective_total_frames ?? vid.total_frames}</span>
                           </span>
                         </td>
                         <td className="p-4 text-center">
@@ -222,13 +320,82 @@ const DatasetStatus: React.FC = () => {
                           )}
                         </td>
                         <td className="p-4 pr-6 text-right">
-                          <Link
-                            to={`/workspace?video_id=${vid.video_id}`}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-navy-card hover:bg-sky-600/20 border border-navy-border hover:border-sky-500/50 rounded-lg text-xs font-semibold text-sky-400 hover:text-slate-100 transition-all"
-                          >
-                            <span>Open</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </Link>
+                          <div className="flex items-center justify-end space-x-2">
+                            <Link
+                              to={`/workspace?video_id=${vid.video_id}`}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-navy-card hover:bg-sky-600/20 border border-navy-border hover:border-sky-500/50 rounded-lg text-xs font-semibold text-sky-400 hover:text-slate-100 transition-all"
+                            >
+                              <span>Annotate</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </Link>
+
+                            {/* Three-Dot (⋮) Menu Button */}
+                            <div className="relative">
+                              <button
+                                onClick={() => setOpenMenuId(openMenuId === vid.video_id ? null : vid.video_id)}
+                                className="p-1.5 rounded-lg bg-navy-card border border-navy-border/80 text-slate-400 hover:text-slate-100 hover:border-slate-500 transition-colors"
+                                title="Manage Dataset"
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </button>
+
+                              {openMenuId === vid.video_id && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setOpenMenuId(null)}
+                                  />
+                                  <div className="absolute right-0 mt-2 w-60 bg-navy-panel border border-navy-border rounded-xl shadow-2xl z-50 py-1 text-xs text-left divide-y divide-navy-border/50">
+                                    <div className="px-3.5 py-2 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                                      Manage Dataset
+                                    </div>
+                                    <div className="py-1">
+                                      <button
+                                        disabled={vid.video_deleted}
+                                        onClick={() => {
+                                          setOpenMenuId(null);
+                                          setVideoToDeleteOnly(vid);
+                                        }}
+                                        className={`w-full px-3.5 py-2 flex items-center space-x-2.5 text-left transition-colors ${
+                                          vid.video_deleted
+                                            ? 'opacity-40 cursor-not-allowed text-slate-500'
+                                            : 'text-amber-300 hover:bg-amber-500/10'
+                                        }`}
+                                      >
+                                        <FileVideo className="w-4 h-4 text-amber-400" />
+                                        <div>
+                                          <span className="font-semibold block">Delete Uploaded Video</span>
+                                          <span className="text-[10px] text-slate-400 font-normal">Keep frames & labels</span>
+                                        </div>
+                                      </button>
+
+                                      <button
+                                        onClick={() => {
+                                          setOpenMenuId(null);
+                                          setVideoToDeleteAll(vid);
+                                        }}
+                                        className="w-full px-3.5 py-2 flex items-center space-x-2.5 text-left text-rose-400 hover:bg-rose-500/10 transition-colors"
+                                      >
+                                        <Trash2 className="w-4 h-4 text-rose-400" />
+                                        <div>
+                                          <span className="font-semibold block">Delete Complete Dataset</span>
+                                          <span className="text-[10px] text-slate-400 font-normal">Remove all files & stats</span>
+                                        </div>
+                                      </button>
+                                    </div>
+                                    <div className="py-1">
+                                      <button
+                                        onClick={() => setOpenMenuId(null)}
+                                        className="w-full px-3.5 py-1.5 text-slate-400 hover:text-slate-200 hover:bg-navy-card"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -274,6 +441,121 @@ const DatasetStatus: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal 1 — Delete Uploaded Video Only */}
+      {videoToDeleteOnly && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-navy-panel border border-amber-500/40 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-5">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                <FileVideo className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-100">Delete Uploaded Video</h3>
+                <p className="text-xs text-amber-300">The uploaded source video will be permanently removed.</p>
+              </div>
+            </div>
+
+            <div className="bg-navy-card/90 border border-navy-border/80 rounded-xl p-4 space-y-3 text-xs">
+              <p className="font-semibold text-slate-300">The following data will be preserved:</p>
+              <div className="space-y-1.5 text-slate-300">
+                <div className="flex items-center space-x-2 text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                  <span>✓ Extracted Key Frames</span>
+                </div>
+                <div className="flex items-center space-x-2 text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                  <span>✓ Annotation Progress</span>
+                </div>
+                <div className="flex items-center space-x-2 text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                  <span>✓ YOLO Labels</span>
+                </div>
+                <div className="flex items-center space-x-2 text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                  <span>✓ Dataset Metadata</span>
+                </div>
+                <div className="flex items-center space-x-2 text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                  <span>✓ Exported Dataset</span>
+                </div>
+              </div>
+              <p className="text-[11px] text-amber-400/90 pt-2 border-t border-navy-border/60">
+                Only the original uploaded video will be deleted. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2 border-t border-navy-border/60">
+              <button
+                onClick={() => setVideoToDeleteOnly(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-navy-card border border-navy-border text-slate-300 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDeleteVideoOnly}
+                disabled={isDeleting}
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-400 text-navy-dark transition-all flex items-center space-x-1.5 shadow-lg shadow-amber-500/20 font-bold"
+              >
+                {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>{isDeleting ? 'Deleting Video...' : 'Delete Video'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal 2 — Delete Complete Dataset */}
+      {videoToDeleteAll && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-navy-panel border border-rose-500/40 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-5">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-100">Delete Complete Dataset</h3>
+                <p className="text-xs text-rose-300">This will permanently remove every resource associated with this dataset.</p>
+              </div>
+            </div>
+
+            <div className="bg-rose-950/20 border border-rose-500/30 rounded-xl p-4 space-y-2.5 text-xs text-rose-200">
+              <p className="font-semibold text-rose-300">The following will be deleted:</p>
+              <ul className="list-disc list-inside space-y-1 text-rose-300/90 font-mono text-[11px]">
+                <li>Uploaded Video</li>
+                <li>Extracted Key Frames</li>
+                <li>Annotation Metadata</li>
+                <li>YOLO Labels</li>
+                <li>Dataset Statistics</li>
+                <li>Progress Information</li>
+                <li>Temporary Files</li>
+              </ul>
+              <p className="text-[11px] text-rose-400 font-bold pt-2 border-t border-rose-900/50">
+                This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2 border-t border-navy-border/60">
+              <button
+                onClick={() => setVideoToDeleteAll(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-navy-card border border-navy-border text-slate-300 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDeleteCompleteDataset}
+                disabled={isDeleting}
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-all flex items-center space-x-1.5 shadow-lg shadow-rose-600/30 font-bold"
+              >
+                {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>{isDeleting ? 'Deleting Everything...' : 'Delete Everything'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
